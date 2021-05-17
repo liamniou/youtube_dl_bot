@@ -11,6 +11,11 @@ import telebot
 from mutagen import mp4
 
 
+class Bunch:
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
+
+
 class Config:
     config = configparser.ConfigParser()
     config_file_path = None
@@ -47,17 +52,34 @@ AUTHORIZED_USERS = [294967926, 191151492]
 bot = telebot.TeleBot(token, threaded=False)
 
 
+def log_and_send_message_decorator(fn):
+    def wrapper(message):
+        log.warning("[FROM {}] [{}]".format(message.chat.id, message.text))
+        if message.chat.id in AUTHORIZED_USERS:
+            reply = fn(message)
+        else:
+            reply = "Sorry, this is a private bot"
+        log.warning("[TO {}] [{}]".format(message.chat.id, reply))
+        try:
+            bot.send_message(message.chat.id, reply)
+        except:
+            log.error(f"Can't send message to {message.chat.id}")
+
+    return wrapper
+
+
 def download_video(video_link):
     filepath = os.path.join("/tmp", str(time.time_ns()))
     try:
-        print("Downloading...")
+        log.warning(f"Downloading {video_link}...")
         subprocess_output = subprocess.check_output(
             ["youtube-dl", "-f", "bestaudio[ext=m4a]", video_link, "-o", filepath]).decode(
             "utf-8").strip().split()
-        print(subprocess_output)
+        log.warning(subprocess_output)
         return filepath
     except:
-        log.warning("Can't download the file")
+        log.error("Can't download the file")
+        return None
 
 
 def generate_list_of_50mb_chunks(size, audio_length):
@@ -86,7 +108,18 @@ def split_large_file(filepath, chunks):
     return list_of_files
 
 
+def instantiate_message(message, reply_msg):
+    return Bunch(chat=Bunch(id=message.chat.id), text=message.text,
+                 reply=reply_msg)
+
+
+@log_and_send_message_decorator
+def send_message(message):
+    return message.reply
+
+
 @bot.message_handler(commands=["start", "help"])
+@log_and_send_message_decorator
 def greet_new_user(message):
     welcome_msg = (
         '\nWelcome to Youtube-dl bot!\nSend link to Youtube video and get audio file back.\n'
@@ -100,38 +133,38 @@ def greet_new_user(message):
             reply = "Hello, {} {}".format(message.chat.first_name, welcome_msg)
     else:
         reply = "Hello, {} {}".format(message.chat.title, welcome_msg)
-    bot.send_message(message.chat.id, reply)
+
+    return reply
 
 
-@bot.message_handler(content_types=["text"])
+@bot.message_handler(func=lambda m: m.text is not None and m.text.startswith(("https://")))
 def process_link(message):
     video_link = message.text
     filepath = download_video(video_link)
+    list_of_files = []
 
-    initial_audio_length = mp4.MP4(filepath).info.length
-    initial_filesize = os.path.getsize(filepath)
+    if filepath:
+        initial_audio_length = mp4.MP4(filepath).info.length
+        initial_filesize = os.path.getsize(filepath)
 
-    if initial_filesize > 52428800:
-        chunks = generate_list_of_50mb_chunks(initial_filesize, initial_audio_length)
-        list_of_files = split_large_file(filepath, chunks)
-    else:
-        list_of_files = [filepath]
+        if initial_filesize > 52428800:
+            chunks = generate_list_of_50mb_chunks(initial_filesize, initial_audio_length)
+            list_of_files = split_large_file(filepath, chunks)
+        else:
+            list_of_files.append(filepath)
 
     if len(list_of_files) > 0:
         for file in list_of_files:
             audio_length = mp4.MP4(file).info.length
-            bot.send_message(
-                message.chat.id,
-                "Audio track was extracted, uploading..."
-            )
+            send_message(instantiate_message(message, "Audio track was extracted, uploading..."))
             audio = open(file, 'rb')
-            bot.send_audio(message.chat.id, audio, "", audio_length)
+            try:
+                bot.send_audio(message.chat.id, audio, "", audio_length)
+            except:
+                log.error(f"Failed to send audio to {message.chat.id}")
             os.remove(file)
     else:
-        bot.send_message(
-            message.chat.id,
-            "I can't extract audio from this link"
-        )
+        send_message(instantiate_message(message, "I can't extract audio from this link"))
 
 
 if __name__ == "__main__":
