@@ -114,11 +114,12 @@ def greet_new_user(message):
     func=lambda m: m.text is not None and m.text.startswith(("https://"))
 )
 def process_link(message):
+    send_message(instantiate_message(message, "Starting the download..."))
     video_link = message.text
     result = download_video(video_link)
 
     if result:
-        send_message(instantiate_message(message, "Audio track was downloaded..."))
+        send_message(instantiate_message(message, "Audio track was downloaded"))
     else:
         send_message(
             instantiate_message(message, "I can't extract audio from this link")
