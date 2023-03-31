@@ -71,7 +71,7 @@ def download_video(video_link):
         log.warning(f"Downloading {video_link}...")
         subprocess_output = (
             subprocess.check_output(
-                ["yt-dlp", video_link, "-o", "/downloads/%(title)s.%(ext)s"]
+                ["yt-dlp", video_link, "-o", "/downloads/%(channel)s/%(title)s.%(ext)s"]
             )
             .decode("utf-8")
             .strip()
