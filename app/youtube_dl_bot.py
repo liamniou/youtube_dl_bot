@@ -114,7 +114,9 @@ def greet_new_user(message):
     func=lambda m: m.text is not None and m.text.startswith(("https://"))
 )
 def process_link(message):
-    send_message(instantiate_message(message, "Starting the download..."))
+    reply = send_message(instantiate_message(message, "Starting the download..."))
+    if reply == "Sorry, this is a private bot":
+        return None
     video_link = message.text
     result = download_video(video_link)
 
